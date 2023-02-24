@@ -1,0 +1,27 @@
+{
+  "name": "@vioreto/compiler",
+  "version": "0.1.0",
+  "description": "A GDscript compiler for creating script easily",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vioreto/compiler.git"
+  },
+  "author": "hanaTsuk1",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/vioreto/compiler/issues"
+  },
+  "homepage": "https://github.com/vioreto/compiler#readme",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.5",
+    "vitest": "^0.28.5"
+  }
+}
