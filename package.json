@@ -18,7 +18,9 @@
   },
   "homepage": "https://github.com/vioreto/compiler#readme",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "devDependencies": {
     "typescript": "^4.9.5",
