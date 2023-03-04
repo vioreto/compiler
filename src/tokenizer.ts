@@ -4,24 +4,24 @@ const space = 32;
 
 function isNewLine(char: string) {
   const code = char.charCodeAt(0);
-  return code === lineFeed || code === carriageReturn;
+  return code == lineFeed || code == carriageReturn;
 }
 
 function isWhitespace(char: string) {
   const code = char.charCodeAt(0);
-  return code === space;
+  return code == space;
 }
 
-interface Token {
+export interface Token {
   type: TokenType;
   value: string;
   start: number;
   end: number;
-  row: number;
+  line: number;
   col: number;
 }
 
-enum Sign {
+export enum Sign {
   LeftParenthesis = "(",
   RightParenthesis = ")",
   LeftCurlyBrace = "{",
@@ -30,11 +30,20 @@ enum Sign {
   GraveAccent = "`",
   DoubleQuotationMark = '"',
   Colon = ":",
-  NumberSign = "#",
+  Number = "#",
   Slash = "/",
 }
 
-enum TokenType {
+export enum Keyword {
+  Alias = "alias",
+  If = "if",
+  Else = "else",
+  End = "end",
+  Branch = "branch",
+  Goto = "goto",
+}
+
+export enum TokenType {
   Whitespace = "whitespace",
   Word = "word",
   Keyword = "keyword",
@@ -45,14 +54,15 @@ class Tokenizer {
   input = "";
   index = 0;
   position = {
-    row: 0,
+    line: 0,
     col: 0,
   };
   lastToken: Token | undefined;
   tokenList: Array<Token> = [];
 
   isKeyword(token: string) {
-    return ["alias", "if", "else", "end", "branch", "goto"].includes(token);
+    const KeywordList = Object.values(Keyword) as Array<string>;
+    return KeywordList.includes(token);
   }
 
   isSign(char: string) {
@@ -67,7 +77,7 @@ class Tokenizer {
   pushToken(type: TokenType, char: string) {
     if (
       this.lastToken &&
-      this.lastToken.type === type &&
+      this.lastToken.type == type &&
       [TokenType.Whitespace, TokenType.Word].includes(this.lastToken.type)
     ) {
       this.lastToken.value += char;
@@ -81,7 +91,7 @@ class Tokenizer {
         value: char,
         start: this.index,
         end: this.index + 1,
-        row: this.position.row,
+        line: this.position.line,
         col: this.position.col,
       };
       this.tokenList.push(this.lastToken);
@@ -95,7 +105,7 @@ class Tokenizer {
     if (char !== next && isNewLine(next)) {
       this.index++;
     }
-    this.position.row++;
+    this.position.line++;
     this.position.col = 0;
     this.index++;
     this.lastToken = undefined;
@@ -104,7 +114,7 @@ class Tokenizer {
   run(input: string) {
     this.input = input;
     while (this.index < input.length) {
-      let char = input[this.index];
+      const char = input[this.index]!;
       switch (true) {
         case isNewLine(char):
           this.pushNewLine(char);

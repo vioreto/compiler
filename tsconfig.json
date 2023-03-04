@@ -2,11 +2,12 @@
   "compilerOptions": {
     "module": "ESNext",
     "target": "ESNext",
+    "lib": ["ESNext"],
     "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
     "outDir": "dist",
-    "declaration": true
+    "declaration": true,
   },
-  "include": [
-    "src"
-  ],
+  "include": ["src"]
 }
