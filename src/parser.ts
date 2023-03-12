@@ -40,43 +40,27 @@ interface StringLiteral extends Node {
   value: string;
 }
 
-type CollectorRule = (token: Token) => boolean | Collector;
-
-class Collector {
-  tokenList: Array<Token> = [];
-  index = 0;
+abstract class Collector {
+  protected tokenList: Array<Token> = [];
   complete = false;
 
-  skipWhitespace = true;
-  node!: Node;
-  ruleList: Array<CollectorRule> = [];
+  abstract node: Node;
+  protected abstract validator: ReturnType<Validator["end"]>;
 
-  next(token: Token | Collector) {
-    if (token instanceof Collector) {
-      this.pushCollector(token);
-      this.index++;
-      return;
+  protected pushToken = (t: Token) => this.tokenList.push(t);
+
+  next(data: Token | Collector) {
+    const result = this.validator.next(data);
+    if (result instanceof Collector) {
+      return result;
     }
-    if (this.skipWhitespace && token.type == TokenType.Whitespace) return;
-    const rule = this.ruleList[this.index]!;
-    const match = rule(token);
-    if (match instanceof Collector) {
-      return match;
-    }
-    if (match) {
-      this.tokenList.push(token);
-    } else {
-      throw new Error();
-    }
-    if (this.index == this.ruleList.length - 1) {
+    if (result) {
       this.complete = true;
+      this.compose();
     }
-    this.index++;
   }
 
-  pushCollector(c: Collector) {}
-
-  compose() {}
+  protected abstract compose(): void;
 }
 
 class AliasStatementCollector extends Collector {
@@ -98,27 +82,25 @@ class AliasStatementCollector extends Collector {
     ],
   };
 
-  override ruleList: Array<CollectorRule> = [
-    (t) => t.value == Keyword.Alias,
-    (t) => t.type == TokenType.Word,
-    (t) => t.value == Sign.Number,
-    (t) => t.type == TokenType.Word,
-    (t) => t.value == Sign.LeftParenthesis,
-    () => new StringLiteralCollector(),
-    (t) => t.value == Sign.RightParenthesis,
-  ];
-
-  override pushCollector(c: Collector) {
-    if (c instanceof StringLiteralCollector) {
-      const [_, packed] = this.node.body;
-      packed.body.value = c.node.value;
-    }
-  }
+  override validator = validator()
+    .add(validator().value(Keyword.Alias))
+    .add(validator().type(TokenType.Word, this.pushToken).whitespace())
+    .add(validator().value(Sign.Number).whitespace())
+    .add(validator().type(TokenType.Word, this.pushToken))
+    .add(validator().value(Sign.LeftParenthesis))
+    .add(
+      validator()
+        .collect(new StringLiteralCollector(), (c) => {
+          const [_, packed] = this.node.body;
+          packed.body.value = c.node.value;
+        })
+        .whitespace()
+    )
+    .add(validator().value(Sign.RightParenthesis).whitespace())
+    .end();
 
   override compose() {
-    const [aliasValue, packedValue] = this.tokenList.filter(
-      (t) => t.type == TokenType.Word
-    );
+    const [aliasValue, packedValue] = this.tokenList;
     const [alias, packed] = this.node.body;
     alias.value = aliasValue!.value;
     packed.value = packedValue!.value;
@@ -131,14 +113,21 @@ class StringLiteralCollector extends Collector {
     value: "",
   };
 
-  override ruleList: CollectorRule[] = [
-    (t) => t.value == Sign.DoubleQuotationMark,
-    (t) => t.type == TokenType.Word,
-    (t) => t.value == Sign.DoubleQuotationMark,
-  ];
+  override validator = validator()
+    .add(validator().value(Sign.DoubleQuotationMark))
+    .add(
+      validator()
+        .token(
+          (t) => t.value != Sign.DoubleQuotationMark,
+          this.pushToken,
+          () => {}
+        )
+        .wait((t) => t.value == Sign.DoubleQuotationMark)
+    )
+    .end();
 
   override compose() {
-    const { value } = this.tokenList[1]!;
+    const value = this.tokenList.map(({ value }) => value).join("");
     this.node.value = value;
   }
 }
@@ -167,13 +156,12 @@ class Parser {
           this.index--;
         }
         if (collector.complete) {
-          collector.compose();
           collectorStack.pop();
           const last = collectorStack.at(-1);
           if (last) {
             last.next(collector);
-            collector = last
-            node = collector.node
+            collector = last;
+            node = collector.node;
           } else {
             this.ast.body.push(node);
             node = null;
@@ -199,4 +187,112 @@ class Parser {
 
 export function parser(tokenList: Array<Token>) {
   return new Parser().run(tokenList);
+}
+
+interface Rule {
+  predicate: (t: Token) => boolean;
+  positive: (t: Token) => void;
+  negative: (t: Token) => void;
+  collect?: (c: Collector) => void;
+  wait?: (t: Token) => boolean;
+  whitespace: boolean;
+  collector?: Collector;
+}
+
+class Validator {
+  private rule: Rule = {
+    predicate: () => false,
+    positive: () => {},
+    negative: () => {
+      throw new Error("Token not matched");
+    },
+    whitespace: false,
+  };
+  private ruleList: Array<Rule> = [];
+
+  add(v: Validator) {
+    this.ruleList.push(v.rule);
+    return this;
+  }
+
+  collect<T extends Collector>(c: T, handler: (c: T) => void) {
+    this.rule.collector = c;
+    // @ts-ignore
+    this.rule.collect = handler;
+    return this;
+  }
+
+  token(
+    predicate: (t: Token) => boolean,
+    positive?: Rule["positive"],
+    negative?: Rule["negative"]
+  ) {
+    this.rule.predicate = predicate;
+    if (positive) {
+      this.rule.positive = positive;
+    }
+    if (negative) {
+      this.rule.negative = negative;
+    }
+    return this;
+  }
+
+  type(
+    type: TokenType,
+    positive?: Rule["positive"],
+    negative?: Rule["negative"]
+  ) {
+    return this.token((t) => t.type == type, positive, negative);
+  }
+
+  value(
+    value: string,
+    positive?: Rule["positive"],
+    negative?: Rule["negative"]
+  ) {
+    return this.token((t) => t.value == value, positive, negative);
+  }
+
+  whitespace() {
+    this.rule.whitespace = true;
+    return this;
+  }
+
+  wait(handler: (t: Token) => boolean) {
+    this.rule.wait = handler;
+    return this;
+  }
+
+  end() {
+    return {
+      next: (t: Token | Collector) => {
+        const rule = this.ruleList.shift()!;
+        if (t instanceof Collector) {
+          rule.collect!(t);
+          return;
+        }
+        if (rule.whitespace && t.type == TokenType.Whitespace) {
+          this.ruleList.unshift(rule);
+          return;
+        }
+        if (rule.collector) {
+          this.ruleList.unshift(rule);
+          return rule.collector;
+        }
+        if (rule.wait && !rule.wait(t)) {
+          this.ruleList.unshift(rule);
+        }
+        if (rule.predicate(t)) {
+          rule.positive(t);
+        } else {
+          rule.negative(t);
+        }
+        return this.ruleList.length == 0;
+      },
+    };
+  }
+}
+
+function validator() {
+  return new Validator();
 }
